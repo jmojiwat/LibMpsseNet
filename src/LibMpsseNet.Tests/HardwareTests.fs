@@ -2,7 +2,6 @@ module Tests.Hardware
 
 open Xunit
 open FsUnit.Xunit
-open Ftdi.LibMpsse
 open Ftdi.LibMpsse.UsbSerialBridge
 open Ftdi.LibMpsse.I2c
 open Ftdi.LibMpsse.Gpio
@@ -10,13 +9,12 @@ open System.Threading
 
 [<Fact>]
 let ``i2cGetNumChannels returns expected result`` () =
-    initLibMpsse () |> ignore
-
-    let status = i2cGetNumChannels ()
+    initLibMpsse ()
     
-    match status with
-    | Ok numChannels -> numChannels
-    | Error _ -> 0u
+    i2cGetNumChannels ()
+    |> function
+        | Ok numChannels -> numChannels
+        | Error _ -> 0u
     |> should not' (equal 0u)
     
     cleanupLibMpsse ()
@@ -25,9 +23,9 @@ let ``i2cGetNumChannels returns expected result`` () =
 let ``i2cGetChannelInfo returns expected result`` () =
     initLibMpsse ()
 
-    let status = i2cGetChannelInfo 0u
-
-    status |> Result.isOk |> should equal true
+    i2cGetChannelInfo 0u
+    |> Result.isOk
+    |> should equal true
     
     cleanupLibMpsse ()
     
@@ -79,8 +77,8 @@ let ``ftWriteGpio on off returns expected result`` () =
           EnableI2cDriveOnlyZero = false }        
     
     let device =
-        I2c.i2cOpenChannel 0u
-        |> Result.bind (I2c.i2cInitChannel config)
+        i2cOpenChannel 0u
+        |> Result.bind (i2cInitChannel config)
         |> function
             | Ok device -> device
             | Error _ -> invalidArg "index" "No device found here"
@@ -93,6 +91,6 @@ let ``ftWriteGpio on off returns expected result`` () =
     
     Thread.Sleep(2_000)
         
-    I2c.i2cCloseChannel device |> ignore        
+    i2cCloseChannel device |> ignore        
     
     cleanupLibMpsse ()

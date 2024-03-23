@@ -1,16 +1,14 @@
 ﻿namespace Ftdi.LibMpsse
 
-module internal Infrastructure =
+module Infrastructure =
     
-    open System.Runtime.CompilerServices
     open Microsoft.FSharp.Core
-    open Ftdi.LibMpsse
     open Ftdi.LibMpsse.Interop
+    open System.Runtime.CompilerServices
 
-    
     [<assembly: InternalsVisibleTo("LibMpsseNet.Tests")>]
     do ()
-    
+            
     let toDeviceError = function
         | FT_STATUS.FT_INVALID_HANDLE -> InvalidHandle 
         | FT_STATUS.FT_DEVICE_NOT_FOUND -> DeviceNotFound 
@@ -101,31 +99,36 @@ module internal Infrastructure =
         let offset, value = tuple
         accumulator ||| (value <<< offset)
 
-module I2cClockRate =
-    
-    open UnitsNet
-    
-    let StandardMode = Frequency.FromHertz(100_000)
-    
-    let FastMode = Frequency.FromHertz(400_000)
-    
-    let FastModePlus = Frequency.FromHertz(1_000_000)
-    
-    let HighSpeedMode = Frequency.FromHertz(3_400_000)
-    
-
 module I2c =
-    
+
     open System
     open System.Runtime.InteropServices
+    open Infrastructure
     open Microsoft.FSharp.Core
     open Ftdi.LibMpsse.Interop
-    open Ftdi.LibMpsse.Interop.I2c
-    open Infrastructure
-    open UnitsNet
     
+    /// <summary>
+    /// <para>Valid range for clock divisor is 0 to 65535.</para>
+    /// <para>Highest clock freq is 6MHz represented by 0.</para>
+    /// <para>The next highest is   3MHz represented by 1.</para>
+    /// <para>Lowest is 91Hz  represented by 65535.</para>
+    /// <para>User can pass either pass I2C_DataRate_100K, I2C_DataRate_400K or
+    /// I2C_DataRate_3_4M for the standard clock rates or a clock divisor value may be passed.</para>
+    /// </summary>
+    type I2cClockRate =
+        /// 100_000 Kbps
+        | StandardMode
+        /// 400_000 Kbps
+        | FastMode
+        /// 1_000 Kbps
+        | FastModePlus
+        /// 3.4 Mbps
+        | HighSpeedMode
+        | ClockDivisor of uint32
+    
+            
     type I2cChannelConfig =
-        { ClockRate: Frequency
+        { ClockRate: I2cClockRate
           LatencyTimer: uint8
           DisableI2c3PhaseClocking: bool
           EnableI2cDriveOnlyZero: bool }
@@ -137,7 +140,7 @@ module I2c =
           FastTransferBytes: bool
           FastTransferBits: bool
           NoAddress: bool }
-    
+        
     let i2cGetNumChannels () =
         let mutable numChannels = 0u
         
@@ -178,16 +181,25 @@ module I2c =
     
     [<Literal>]
     let internal I2cEnableDriveOnlyZeroOffset = 1
-    
+
+    let internal mapToI2cClockRate (clockRate: I2cClockRate) =
+        match clockRate with
+        | StandardMode -> 100_000u
+        | FastMode -> 400_000u
+        | FastModePlus -> 1_000_000u
+        | HighSpeedMode -> 3_400_000u
+        | ClockDivisor value -> value
+            
     let internal mapToI2cChannelConfigStruct (config: I2cChannelConfig) =
+        let clockRate = mapToI2cClockRate config.ClockRate
         let options =
             [ config.DisableI2c3PhaseClocking; config.EnableI2cDriveOnlyZero ]
             |> List.map (fun v -> if v then 1u else 0u)
             |> List.zip [ I2cDisable3PhaseClockingOffset; I2cEnableDriveOnlyZeroOffset; ]
             |> List.fold logicalOr 0u
-
-        let mutable channelConfig = CHANNEL_CONFIG()
-        channelConfig.ClockRate <- config.ClockRate.Hertz |> uint32
+        
+        let mutable channelConfig = I2C_CHANNEL_CONFIG()
+        channelConfig.ClockRate <- mapToI2cClockRate config.ClockRate
         channelConfig.LatencyTimer <- config.LatencyTimer
         channelConfig.Options <- options
         channelConfig
@@ -203,7 +215,7 @@ module I2c =
             Error (toDeviceError status)
         
     let i2cCloseChannel channel =
-        let status = I2C_CloseChannel(channel.Handle)
+        let status = I2C_CloseChannel channel.Handle
 
         match status with
         | FT_STATUS.FT_OK ->
@@ -327,12 +339,11 @@ module Spi =
     
     open System
     open System.Runtime.InteropServices
-    open Microsoft.FSharp.Core
-    open Ftdi.LibMpsse.Interop
-    open Ftdi.LibMpsse.Interop.Spi
     open Infrastructure
     open UnitsNet
-    
+    open Microsoft.FSharp.Core
+    open Ftdi.LibMpsse.Interop
+        
     type SpiMode =
         | SpiMode0
         | SpiMode1
@@ -425,17 +436,17 @@ module Spi =
     let internal SpiConfigChipSelectActiveOffset = 5
     
     let internal mapToSpiChannelConfigStruct (config: SpiChannelConfig) =
-        let options =
+        let configOptions =
             [ toSpiModeValue config.SpiMode
               toChipSelectLineValue config.ChipSelectLine
               toChipSelectActiveValue config.ChipSelectActive ]
             |> List.zip [ SpiConfigModeOffset; SpiConfigChipSelectLineOffset; SpiConfigChipSelectActiveOffset ]
             |> List.fold logicalOr 0u
         
-        let mutable channelConfig = CHANNEL_CONFIG()
+        let mutable channelConfig = SPI_CHANNEL_CONFIG()
         channelConfig.ClockRate <- config.ClockRate.Hertz |> uint32
         channelConfig.LatencyTimer <- config.LatencyTimer
-        channelConfig.Options <- options
+        channelConfig.configOptions <- configOptions
         channelConfig
         
     let spiInitChannel channel config =
@@ -527,9 +538,9 @@ module Spi =
 module Gpio =
     
     open System.Collections
-    open Ftdi.LibMpsse.Interop
-    open Ftdi.LibMpsse.Interop.Gpio
     open Infrastructure
+    open Microsoft.FSharp.Core
+    open Ftdi.LibMpsse.Interop
     open Ftdi.LibMpsse
     
     type GpioState =
@@ -634,10 +645,10 @@ module Gpio =
     
 module UsbSerialBridge =
 
-    open System    
-    open Ftdi.LibMpsse.Interop.Infrastructure
+    open System
+    open Microsoft.FSharp.Core
+    open Ftdi.LibMpsse.Interop
     
-
     type internal MpsseState =
         | Uninitialised
         | Initialised
@@ -670,7 +681,7 @@ module UsbSerialBridge =
             member this.Dispose() = cleanupLibMpsse () }
 
 
-    let toErrorString =
+    let toString =
         function
         | InvalidHandle -> "Invalid Handle"
         | DeviceNotFound -> "Device Not found"

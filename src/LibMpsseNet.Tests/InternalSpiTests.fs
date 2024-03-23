@@ -2,7 +2,6 @@
 
 open Xunit
 open FsUnit.Xunit
-open Ftdi.LibMpsse
 open Ftdi.LibMpsse.Spi
 open UnitsNet
 
@@ -18,7 +17,7 @@ let ``mapToSpiChannelConfigStruct returns expected result`` () =
     let config = mapToSpiChannelConfigStruct channelConfig
     
     config.ClockRate |> should equal 30_000_000u
-    config.Options |> should equal 0b0010_1110u
+    config.configOptions |> should equal 0b0010_1110u
     
 [<Fact>]
 let ``toSpiTransferOptions returns expected result`` () =
