@@ -1,9 +1,10 @@
 ﻿namespace Ftdi.LibMpsse
 
+open Ftdi.LibMpsse.Interop
+
 module Infrastructure =
     
     open Microsoft.FSharp.Core
-    open Ftdi.LibMpsse.Interop
     open System.Runtime.CompilerServices
 
     [<assembly: InternalsVisibleTo("LibMpsseNet.Tests")>]
@@ -31,18 +32,6 @@ module Infrastructure =
         | FT_STATUS.FT_DEVICE_LIST_NOT_READY -> DeviceListNotReady
         | _ -> OtherError
 
-    [<Literal>]
-    let FT_FLAGS_OPENED = 1u
-    
-    [<Literal>]
-    let FT_FLAGS_CLOSED = 0u
-
-    [<Literal>]
-    let FT_FLAGS_HIGHSPEED = 2u
-    
-    [<Literal>]
-    let FT_FLAGS_FULLSPEED = 0u
-    
     let devicePortState flags =
         match flags ||| FT_FLAGS_OPENED with
         | 1u -> PortOpened
@@ -81,7 +70,7 @@ module Infrastructure =
         | FT_DEVICE.FT_DEVICE_4232HA -> Device4232HA
         | _ -> DeviceUnknown
     
-    let toChannelInfo (dlin: FT_DEVICE_LIST_INFO_NODE) =
+    let internal toChannelInfo (dlin: FT_DEVICE_LIST_INFO_NODE) =
         let portState = devicePortState dlin.Flags
         let speed = deviceSpeed dlin.Flags
         let device = toDeviceType dlin.Type
@@ -94,18 +83,12 @@ module Infrastructure =
           Description = dlin.Description
           Handle = dlin.Handle }
             
-    
-    let inline logicalOr accumulator tuple =
-        let offset, value = tuple
-        accumulator ||| (value <<< offset)
-
 module I2c =
 
     open System
     open System.Runtime.InteropServices
     open Infrastructure
     open Microsoft.FSharp.Core
-    open Ftdi.LibMpsse.Interop
     
     /// <summary>
     /// <para>Valid range for clock divisor is 0 to 65535.</para>
@@ -126,20 +109,29 @@ module I2c =
         | HighSpeedMode
         | ClockDivisor of uint32
     
-            
+    type I2cPinStateConfig =
+        | Enable of Pins: uint32
+        | Disable
+        
     type I2cChannelConfig =
         { ClockRate: I2cClockRate
           LatencyTimer: uint8
-          DisableI2c3PhaseClocking: bool
-          EnableI2cDriveOnlyZero: bool }
+          Enable3PhaseClocking: bool
+          EnableLoopback: bool
+          EnableClockStretching: bool
+          PinStateConfig: I2cPinStateConfig }
+    
+    type I2cTransferSpeed =
+        | FastTransferBytes
+        | FastTransferBits
+        | NormalTransfer of BreakOnNack: bool * NackLastByte: bool
     
     type I2cTransferOptions =
         { StartBit: bool
           StopBit: bool
-          BreakOnNak: bool
-          FastTransferBytes: bool
-          FastTransferBits: bool
+          TransferSpeed: I2cTransferSpeed
           NoAddress: bool }
+        
         
     let i2cGetNumChannels () =
         let mutable numChannels = 0u
@@ -176,27 +168,25 @@ module I2c =
         | _ ->
             Error (toDeviceError status)
         
-    [<Literal>]
-    let internal I2cDisable3PhaseClockingOffset = 0
-    
-    [<Literal>]
-    let internal I2cEnableDriveOnlyZeroOffset = 1
-
     let internal mapToI2cClockRate (clockRate: I2cClockRate) =
         match clockRate with
-        | StandardMode -> 100_000u
-        | FastMode -> 400_000u
-        | FastModePlus -> 1_000_000u
-        | HighSpeedMode -> 3_400_000u
+        | StandardMode -> I2C_CLOCKRATE.I2C_CLOCK_STANDARD_MODE |> uint32
+        | FastMode -> I2C_CLOCKRATE.I2C_CLOCK_FAST_MODE |> uint32
+        | FastModePlus -> I2C_CLOCKRATE.I2C_CLOCK_FAST_MODE_PLUS |> uint32
+        | HighSpeedMode -> I2C_CLOCKRATE.I2C_CLOCK_HIGH_SPEED_MODE |> uint32
         | ClockDivisor value -> value
             
-    let internal mapToI2cChannelConfigStruct (config: I2cChannelConfig) =
-        let clockRate = mapToI2cClockRate config.ClockRate
-        let options =
-            [ config.DisableI2c3PhaseClocking; config.EnableI2cDriveOnlyZero ]
-            |> List.map (fun v -> if v then 1u else 0u)
-            |> List.zip [ I2cDisable3PhaseClockingOffset; I2cEnableDriveOnlyZeroOffset; ]
-            |> List.fold logicalOr 0u
+    let internal toI2cChannelConfig (config: I2cChannelConfig) =
+        let threePhaseClocking = if config.Enable3PhaseClocking then 0u else I2C_DISABLE_3PHASE_CLOCKING            
+        let loopback = if config.EnableLoopback then 2u else 0u
+        let clockStretching = if config.EnableClockStretching then 4u else 0u
+
+        let pinStateConfig =
+            match config.PinStateConfig with
+            | Disable -> 0u, 0u
+            | Enable pins -> I2C_ENABLE_PIN_STATE_CONFIG, pins
+
+        let options = threePhaseClocking ||| loopback ||| clockStretching ||| fst pinStateConfig
         
         let mutable channelConfig = I2C_CHANNEL_CONFIG()
         channelConfig.ClockRate <- mapToI2cClockRate config.ClockRate
@@ -205,7 +195,7 @@ module I2c =
         channelConfig
         
     let i2cInitChannel config channel =
-        let mutable channelConfig = mapToI2cChannelConfigStruct config
+        let mutable channelConfig = toI2cChannelConfig config
         let status = I2C_InitChannel(channel.Handle, &channelConfig)
 
         match status with
@@ -223,39 +213,22 @@ module I2c =
         | _ ->
             Error (toDeviceError status)
 
-    [<Literal>]
-    let internal I2cStartBitOffset = 0
-        
-    [<Literal>]
-    let internal I2cStopBitOffset = 1
-        
-    [<Literal>]
-    let internal I2cBreakOnNakOffset = 2
-        
-    [<Literal>]
-    let internal I2cFastTransferBytesOffset = 4
-        
-    [<Literal>]
-    let internal I2cFastTransferBitsOffset = 5
-        
-    [<Literal>]
-    let internal I2cNoAddressOffset = 6
+    let internal toI2cTransferSpeed transferSpeed =
+        match transferSpeed with
+        | FastTransferBytes -> I2C_TRANSFER_OPTIONS_FAST_TRANSFER_BYTES
+        | FastTransferBits -> I2C_TRANSFER_OPTIONS_FAST_TRANSFER_BITS
+        | NormalTransfer (breakOnNack, nackLastByte) ->
+            let breakOnNack = if breakOnNack then I2C_TRANSFER_OPTIONS_BREAK_ON_NACK else 0u
+            let nackLastByte = if nackLastByte then I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE else 0u
+            breakOnNack ||| nackLastByte
         
     let internal toI2cTransferOptions transferOptions =
-        [ transferOptions.StartBit
-          transferOptions.StopBit
-          transferOptions.BreakOnNak
-          transferOptions.FastTransferBytes
-          transferOptions.FastTransferBits
-          transferOptions.NoAddress ]
-        |> List.map (fun v -> if v then 1u else 0u)
-        |> List.zip [ I2cStartBitOffset
-                      I2cStopBitOffset
-                      I2cBreakOnNakOffset
-                      I2cFastTransferBytesOffset
-                      I2cFastTransferBitsOffset
-                      I2cNoAddressOffset ]
-        |> List.fold logicalOr 0u
+        let startBit = if transferOptions.StartBit then I2C_TRANSFER_OPTIONS_START_BIT else 0u
+        let stopBit = if transferOptions.StopBit then I2C_TRANSFER_OPTIONS_STOP_BIT else 0u
+        let speed = toI2cTransferSpeed transferOptions.TransferSpeed
+        let noAddress = if transferOptions.NoAddress then I2C_TRANSFER_OPTIONS_NO_ADDRESS else 0u
+        
+        startBit ||| stopBit ||| speed ||| noAddress
 
     let i2cDeviceRead channel options deviceAddress (buffer: byte[]) =
         let transferOptions = toI2cTransferOptions options
@@ -286,8 +259,10 @@ module I2c =
     let defaultConfig =
         { ClockRate = I2cClockRate.FastMode
           LatencyTimer = 255uy
-          DisableI2c3PhaseClocking = false
-          EnableI2cDriveOnlyZero = false }
+          Enable3PhaseClocking = false
+          EnableLoopback = false
+          EnableClockStretching = false
+          PinStateConfig = Disable }
         
     let getMpsseDevice config index =
         i2cOpenChannel index
@@ -301,11 +276,9 @@ module I2c =
     let defaultTransferOptions =
         { StartBit = true
           StopBit = false
-          BreakOnNak = false
-          FastTransferBytes = false
-          FastTransferBits = false
+          TransferSpeed = NormalTransfer (false, false) 
           NoAddress = false }
-        
+          
     let readByte channel transferOptions deviceAddress =
         let buffer: byte[] = Array.zeroCreate 1
                     
@@ -342,7 +315,6 @@ module Spi =
     open Infrastructure
     open UnitsNet
     open Microsoft.FSharp.Core
-    open Ftdi.LibMpsse.Interop
         
     type SpiMode =
         | SpiMode0
@@ -365,14 +337,24 @@ module Spi =
         { ClockRate: Frequency
           LatencyTimer: uint8
           SpiMode: SpiMode
-          ChipSelectLine: ChipSelectLine
-          ChipSelectActive: ChipSelectActive }
+          ChipSelect: ChipSelectLine
+          ChipSelectActive: ChipSelectActive
+          Pins: uint32 }
     
+    type SpiSize =
+        | SizeInBytes
+        | SizeInBits
+        
+    type SpiTransferOptions =
+        { Size: SpiSize
+          EnableChipSelect: bool }
+    
+    (*
     type SpiTransferOptions =
         { SizeInBits: bool
           ChipSelectEnable: bool
           ChipSelectDisable: bool }
-    
+          *)
     
     let spiGetNumChannels () =
         let mutable numChannels = 0u
@@ -409,48 +391,40 @@ module Spi =
         | _ ->
             Error (toDeviceError status)
         
-    let internal toSpiModeValue = function
-        | SpiMode0 -> 0u
-        | SpiMode1 -> 1u
-        | SpiMode2 -> 2u
-        | SpiMode3 -> 3u
-        
-    let internal toChipSelectLineValue = function
-        | Dbus3Line -> 0u
-        | Dbus4Line -> 1u
-        | Dbus5Line -> 2u
-        | Dbus6Line -> 3u
-        | Dbus7Line -> 4u
-          
-    let internal toChipSelectActiveValue = function
-        | ActiveHigh -> 0u
-        | ActiveLow -> 1u
 
-    [<Literal>]
-    let internal SpiConfigModeOffset = 0
-
-    [<Literal>]
-    let internal SpiConfigChipSelectLineOffset = 2
-    
-    [<Literal>]
-    let internal SpiConfigChipSelectActiveOffset = 5
-    
-    let internal mapToSpiChannelConfigStruct (config: SpiChannelConfig) =
-        let configOptions =
-            [ toSpiModeValue config.SpiMode
-              toChipSelectLineValue config.ChipSelectLine
-              toChipSelectActiveValue config.ChipSelectActive ]
-            |> List.zip [ SpiConfigModeOffset; SpiConfigChipSelectLineOffset; SpiConfigChipSelectActiveOffset ]
-            |> List.fold logicalOr 0u
-        
+    let internal toSpiChannelConfig (config: SpiChannelConfig) =
         let mutable channelConfig = SPI_CHANNEL_CONFIG()
         channelConfig.ClockRate <- config.ClockRate.Hertz |> uint32
         channelConfig.LatencyTimer <- config.LatencyTimer
+
+        let mode =
+            match config.SpiMode with
+            | SpiMode0 -> SPI_CONFIG_OPTION_MODE0
+            | SpiMode1 -> SPI_CONFIG_OPTION_MODE1
+            | SpiMode2 -> SPI_CONFIG_OPTION_MODE2
+            | SpiMode3 -> SPI_CONFIG_OPTION_MODE3
+            
+        let chipSelect =
+            match config.ChipSelect with
+            | Dbus3Line -> SPI_CONFIG_OPTION_CS_DBUS3
+            | Dbus4Line -> SPI_CONFIG_OPTION_CS_DBUS4
+            | Dbus5Line -> SPI_CONFIG_OPTION_CS_DBUS5
+            | Dbus6Line -> SPI_CONFIG_OPTION_CS_DBUS6
+            | Dbus7Line -> SPI_CONFIG_OPTION_CS_DBUS7
+            
+        let chipSelectActive =
+            match config.ChipSelectActive with
+            | ActiveHigh -> SPI_CONFIG_OPTION_CS_ACTIVEHIGH
+            | ActiveLow -> SPI_CONFIG_OPTION_CS_ACTIVELOW            
+            
+        let configOptions =
+            mode ||| chipSelect ||| chipSelectActive
+        
         channelConfig.configOptions <- configOptions
         channelConfig
         
     let spiInitChannel channel config =
-        let mutable channelConfig = mapToSpiChannelConfigStruct config
+        let mutable channelConfig = toSpiChannelConfig config
         let status = SPI_InitChannel(channel.Handle, &channelConfig)
 
         match status with
@@ -478,17 +452,22 @@ module Spi =
     let internal SpiChipSelectDisableOffset = 2
     
     let internal toSpiTransferOptions transferOptions =
-        [ transferOptions.SizeInBits
-          transferOptions.ChipSelectEnable
-          transferOptions.ChipSelectDisable ]
-        |> List.map (fun v -> if v then 1u else 0u)
-        |> List.zip [ SpiSizeInBitsOffset; SpiChipSelectEnableOffset; SpiChipSelectDisableOffset ]
-        |> List.fold logicalOr 0u
+        let size =
+            match transferOptions.Size with
+            | SizeInBits -> SPI_TRANSFER_OPTIONS_SIZE_IN_BITS
+            | SizeInBytes -> SPI_TRANSFER_OPTIONS_SIZE_IN_BYTES
+            
+        let enableChipSelect =
+            match transferOptions.EnableChipSelect with
+            | true -> SPI_TRANSFER_OPTIONS_CHIPSELECT_ENABLE
+            | false -> SPI_TRANSFER_OPTIONS_CHIPSELECT_DISABLE
+            
+        size ||| enableChipSelect            
         
     let spiRead channel options (buffer: byte[]) =
-        let transferOptions = toSpiTransferOptions options
         let sizeToTransfer = buffer.Length |> uint32
         let mutable sizeTransferred = 0u
+        let transferOptions = toSpiTransferOptions options
 
         let status = SPI_Read(channel.Handle, buffer, sizeToTransfer, &sizeTransferred, transferOptions)
         
@@ -540,7 +519,6 @@ module Gpio =
     open System.Collections
     open Infrastructure
     open Microsoft.FSharp.Core
-    open Ftdi.LibMpsse.Interop
     open Ftdi.LibMpsse
     
     type GpioState =
@@ -582,6 +560,8 @@ module Gpio =
         | OutputHigh -> 1uy
         | Input -> 0uy
         
+//    let internal toGpioDirection gpioPins =
+        
     let internal toGpioDirectionValue gpioPins =
         let pins =
           [ gpioPins.Cbus0
@@ -594,14 +574,29 @@ module Gpio =
             gpioPins.Cbus7 ]
           
         let directions =
-            List.map gpioStateToDirection pins
-            |> List.zip [ 0; 1; 2; 3; 4; 5; 6; 7 ]
-            |> List.fold logicalOr 0uy
+            pins
+            |> List.map (fun pin ->
+                match pin with
+                | Input -> 0uy
+                | _ -> 1uy)
+            |> List.mapi (fun i v ->
+                match v with
+                | 1uy -> 1uy <<< i
+                | _ -> 0uy)
+            |> List.reduce (|||)
             
         let values =
-            List.map gpioStateToValue pins
-            |> List.zip [ 0; 1; 2; 3; 4; 5; 6; 7 ]
-            |> List.fold logicalOr 0uy
+            pins
+            |> List.map (fun pin ->
+                match pin with
+                | Input -> 0uy
+                | OutputHigh -> 1uy
+                | OutputLow -> 0uy)
+            |> List.mapi (fun i v ->
+                match v with
+                | 1uy -> 1uy <<< i
+                | _ -> 0uy)
+            |> List.reduce (|||)
             
         directions, values
 
@@ -647,7 +642,6 @@ module UsbSerialBridge =
 
     open System
     open Microsoft.FSharp.Core
-    open Ftdi.LibMpsse.Interop
     
     type internal MpsseState =
         | Uninitialised

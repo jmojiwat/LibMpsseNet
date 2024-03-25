@@ -18,16 +18,18 @@ let ``i2cGetNumChannels returns expected result`` () =
     |> should not' (equal 0u)
     
     cleanupLibMpsse ()
-    
+
 [<Fact>]
 let ``i2cGetChannelInfo returns expected result`` () =
-    initLibMpsse ()
-
-    i2cGetChannelInfo 0u
-    |> Result.isOk
-    |> should equal true
+    use libMpsse = useLibMpsse ()
     
-    cleanupLibMpsse ()
+    let info =
+        i2cGetChannelInfo 0u
+        |> function
+            | Ok ci -> ci
+            | Error _ -> failwith "failed getting channel info."
+            
+    info.Description |> should not' (be Empty)            
     
     
 [<Fact>]
@@ -51,20 +53,23 @@ let ``i2cInitChannel returns expected result`` () =
     let config =
         { ClockRate = I2cClockRate.FastMode
           LatencyTimer = 255uy
-          DisableI2c3PhaseClocking = false
-          EnableI2cDriveOnlyZero = false }
+          Enable3PhaseClocking = true
+          EnableLoopback = false
+          EnableClockStretching = false
+          PinStateConfig = Disable }
         
-    let status =
+    let channel =
         i2cOpenChannel 0u
         |> Result.bind (i2cInitChannel config)
 
-    status |> Result.isOk |> should equal true
+    channel |> Result.isOk |> should equal true
     
-    status
+    channel
     |> Result.map i2cCloseChannel
     |> ignore
     
     cleanupLibMpsse ()
+    
     
 [<Fact>]
 let ``ftWriteGpio on off returns expected result`` () =
@@ -73,8 +78,10 @@ let ``ftWriteGpio on off returns expected result`` () =
     let config =
         { ClockRate = I2cClockRate.FastMode
           LatencyTimer = 255uy
-          DisableI2c3PhaseClocking = false
-          EnableI2cDriveOnlyZero = false }        
+          Enable3PhaseClocking = true
+          EnableLoopback = false
+          EnableClockStretching = false
+          PinStateConfig = Disable }
     
     let device =
         i2cOpenChannel 0u

@@ -4,6 +4,8 @@ open System
 open System.Runtime.InteropServices
 
 module Interop =
+    
+    // types from ftd2xx.h
 
     type FT_STATUS =
         | FT_OK = 0u
@@ -85,28 +87,36 @@ module Interop =
             val mutable Handle : IntPtr
         end
 
+    [<Literal>]
+    let FT_FLAGS_OPENED = 1u
+    
+    [<Literal>]
+    let FT_FLAGS_HIGHSPEED = 2u
+    
+    
+    
     // from libmpsse_i2c.h
     
     // Options to I2C_DeviceWrite & I2C_DeviceRead
     // Generate start condition before transmitting.
     [<Literal>]
-    let I2C_TRANSFER_OPTIONS_START_BIT = 0x0000_0001
+    let I2C_TRANSFER_OPTIONS_START_BIT = 0x0000_0001u
     
     // Generate stop condition before transmitting.
     [<Literal>]
-    let I2C_TRANSFER_OPTIONS_STOP_BIT = 0x0000_0002
+    let I2C_TRANSFER_OPTIONS_STOP_BIT = 0x0000_0002u
     
     // Continue transmitting data in bulk without caring about Ack or nAck from device if this bit
     // is not set. If this bit is set then stop transferring the data in the buffer when the device
     // nACKs.
     [<Literal>]
-    let I2C_TRANSFER_OPTIONS_BREAK_ON_NACK = 0x0000_0004
+    let I2C_TRANSFER_OPTIONS_BREAK_ON_NACK = 0x0000_0004u
     
     // libMPSSE-I2C generates an ACKs for every byte read. Some I2C slaves require the I2C
     // master to generate a nACK for the last data byte read. Setting this bit enables working with
     // such I2C slaves.
     [<Literal>]
-    let I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE = 0x0000_0008
+    let I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE = 0x0000_0008u
     
     // Fast transfers prepare a buffer containing commands to generate START/STOP/ADDRESS
     // conditions and commands to read/write data. This buffer is sent to the MPSSE in one shot,
@@ -120,7 +130,7 @@ module Interop =
     // I2C_TRANSFER_OPTIONS_BREAK_ON_NACK and
     // I2C_TRANSFER_OPTIONS_NACK_LAST_BYTE are not applicable in fast transfers. */
     [<Literal>]
-    let I2C_TRANSFER_OPTIONS_FAST_TRANSFER = 0x0000_0030     // not visible to user
+    let I2C_TRANSFER_OPTIONS_FAST_TRANSFER = 0x0000_0030u     // not visible to user
     
     // When the user calls I2C_DeviceWrite or I2C_DeviceRead with this bit set then libMPSSE
     // packs commands to transfer sizeToTransfer number of bytes, and to read/write
@@ -128,13 +138,13 @@ module Interop =
     // data is being read then an acknowledgement bit(SDA=LOW) is given to the I2C slave
     // after each byte read.
     [<Literal>]
-    let I2C_TRANSFER_OPTIONS_FAST_TRANSFER_BYTES = 0x0000_0010
+    let I2C_TRANSFER_OPTIONS_FAST_TRANSFER_BYTES = 0x0000_0010u
     
     // When the user calls I2C_DeviceWrite or I2C_DeviceRead with this bit set then libMPSSE
     // packs commands to transfer sizeToTransfer number of bits. There is no ACK phase when
     // this bit is set.
     [<Literal>]
-    let I2C_TRANSFER_OPTIONS_FAST_TRANSFER_BITS = 0x0000_0020
+    let I2C_TRANSFER_OPTIONS_FAST_TRANSFER_BITS = 0x0000_0020u
     
     // The address parameter is ignored in transfers if this bit is set. This would mean that
     // the address is either a part of the data or this is a special I2C frame that doesn't require
@@ -142,7 +152,7 @@ module Interop =
     // written to the I2C bus each time I2C_DeviceWrite or I2C_DeviceRead is called and a
     // 1bit acknowledgement will be read after that.
     [<Literal>]
-    let I2C_TRANSFER_OPTIONS_NO_ADDRESS = 0x0000_0040
+    let I2C_TRANSFER_OPTIONS_NO_ADDRESS = 0x0000_0040u
     
     [<Literal>]
     let I2C_CMD_GETDEVICEID_RD = 0xF9
@@ -156,11 +166,11 @@ module Interop =
     
     // 3-phase clocking is enabled by default. Setting this bit in ConfigOptions will disable it
     [<Literal>]
-    let I2C_DISABLE_3PHASE_CLOCKING = 0x0001uy
+    let I2C_DISABLE_3PHASE_CLOCKING = 0x0001u
     
     // option to enable pinstate configuration
     [<Literal>]
-    let I2C_ENABLE_PIN_STATE_CONFIG = 0x0010uy
+    let I2C_ENABLE_PIN_STATE_CONFIG = 0x0010u
     
     type I2C_CLOCKRATE =
         | I2C_CLOCK_STANDARD_MODE = 100_000     // 100kb/sec
@@ -399,51 +409,51 @@ module Interop =
     
     // transferOptions-Bit0: If this bit is 0 then it means that the transfer size provided is in bytes
     [<Literal>]
-    let SPI_TRANSFER_OPTIONS_SIZE_IN_BYTES = 0x0000_0000
+    let SPI_TRANSFER_OPTIONS_SIZE_IN_BYTES = 0x0000_0000u
     
     // transferOptions-Bit0: If this bit is 1 then it means that the transfer size provided is in bytes
     [<Literal>]
-    let SPI_TRANSFER_OPTIONS_SIZE_IN_BITS = 0x0000_0001
+    let SPI_TRANSFER_OPTIONS_SIZE_IN_BITS = 0x0000_0001u
     // transferOptions-Bit1: if BIT1 is 1 then CHIP_SELECT line will be enabled at start of transfer
     [<Literal>]
-    let SPI_TRANSFER_OPTIONS_CHIPSELECT_ENABLE = 0x0000_0002
+    let SPI_TRANSFER_OPTIONS_CHIPSELECT_ENABLE = 0x0000_0002u
     // transferOptions-Bit2: if BIT2 is 1 then CHIP_SELECT line will be disabled at end of transfer
     [<Literal>]
-    let SPI_TRANSFER_OPTIONS_CHIPSELECT_DISABLE = 0x0000_0004
+    let SPI_TRANSFER_OPTIONS_CHIPSELECT_DISABLE = 0x0000_0004u
     // transferOptions-Bit3: if BIT3 is 1 then LSB will be processed first
     [<Literal>]
-    let SPI_TRANSFER_OPTIONS_LSB_FIRST = 0x0000_0008
+    let SPI_TRANSFER_OPTIONS_LSB_FIRST = 0x0000_0008u
     
     
     // Bit definition of the Options member of configOptions structure
     [<Literal>]
     let SPI_CONFIG_OPTION_MODE_MASK = 0x0000_0003
     [<Literal>]
-    let SPI_CONFIG_OPTION_MODE0 = 0x0000_0000
+    let SPI_CONFIG_OPTION_MODE0 = 0x0000_0000u
     [<Literal>]
-    let SPI_CONFIG_OPTION_MODE1 = 0x0000_0001
+    let SPI_CONFIG_OPTION_MODE1 = 0x0000_0001u
     [<Literal>]
-    let SPI_CONFIG_OPTION_MODE2 = 0x0000_0002
+    let SPI_CONFIG_OPTION_MODE2 = 0x0000_0002u
     [<Literal>]
-    let SPI_CONFIG_OPTION_MODE3 = 0x0000_0003
+    let SPI_CONFIG_OPTION_MODE3 = 0x0000_0003u
     
     [<Literal>]
     let SPI_CONFIG_OPTION_CS_MASK = 0x0000_001C     // 111 00
     [<Literal>]
-    let SPI_CONFIG_OPTION_CS_DBUS3 = 0x0000_0000    // 000 00
+    let SPI_CONFIG_OPTION_CS_DBUS3 = 0x0000_0000u    // 000 00
     [<Literal>]
-    let SPI_CONFIG_OPTION_CS_DBUS4 = 0x0000_0004    // 001 00
+    let SPI_CONFIG_OPTION_CS_DBUS4 = 0x0000_0004u    // 001 00
     [<Literal>]
-    let SPI_CONFIG_OPTION_CS_DBUS5 = 0x0000_0008    // 010 00
+    let SPI_CONFIG_OPTION_CS_DBUS5 = 0x0000_0008u    // 010 00
     [<Literal>]
-    let SPI_CONFIG_OPTION_CS_DBUS6 = 0x0000_000C    // 011 00
+    let SPI_CONFIG_OPTION_CS_DBUS6 = 0x0000_000Cu    // 011 00
     [<Literal>]
-    let SPI_CONFIG_OPTION_CS_DBUS7 = 0x0000_0010    // 100 00
+    let SPI_CONFIG_OPTION_CS_DBUS7 = 0x0000_0010u    // 100 00
     
     [<Literal>]
-    let SPI_CONFIG_OPTION_CS_ACTIVEHIGH = 0x0000_0000
+    let SPI_CONFIG_OPTION_CS_ACTIVEHIGH = 0x0000_0000u
     [<Literal>]
-    let SPI_CONFIG_OPTION_CS_ACTIVELOW = 0x0000_0020
+    let SPI_CONFIG_OPTION_CS_ACTIVELOW = 0x0000_0020u
         
     /// <summary>This Structure contains configuration information of the SPI channel. It is populated by the user
     /// application during initialization of the channel and then it is saved in a linked-list and used
