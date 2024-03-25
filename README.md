@@ -1,12 +1,12 @@
 # LibMpsseNet
 
-LibMpsseNet is a thin F# wrapper for FTDI Chip Multi Protocol Synchronous Serial Engine (MPSSE) library.
+LibMpsseNet is a thin F# wrapper for FTDI Chip Multi Protocol Synchronous Serial Engine (MPSSE) library 1.0.5.
 
 MPSSE provides a flexible means of interfacing synchronous serial devices to a USB port. The FT-serices device supported includes the FT2232D, FT2232H, FT4232H and FT232H.
 
 ## Requirements
 
-LibMpsseNet requires libmpsse.lib C library to be present.
+LibMpsseNet requires libmpsse.lib C library to be present from the [LibMPSSE library](https://ftdichip.com/wp-content/uploads/2024/01/LibMPSSE_1.0.5.zip).
 
 ## API
 
