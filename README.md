@@ -20,13 +20,15 @@ API closely follows the API in the MPSSE documentation that can be found in the 
 
 ```fsharp
 
-initLibMpsse ()
+use lib = useLibMpsse ()
     
 let config =
     { ClockRate = I2cClockRate.FastMode
       LatencyTimer = 255uy
-      DisableI2c3PhaseClocking = false
-      EnableI2cDriveOnlyZero = false }
+      Enable3PhaseClocking = true
+      EnableLoopback = false
+      EnableClockStretching = false
+      PinStateConfig = Disable }
         
 let status =
     i2cOpenChannel 0u
@@ -37,7 +39,5 @@ let status =
 status
 |> Result.map i2cCloseChannel
 |> ignore
-  
-cleanupLibMpsse ()
 
 ```
